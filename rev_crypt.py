@@ -1,5 +1,6 @@
 import copy
 import math
+import string
 from random import choice
 
 import rsa
@@ -164,13 +165,18 @@ def sign_check(int_msg: list[int], e: int, n: int) -> list[int]:
     return [pow(i, e, n) for i in int_msg]
 
 
+def generate_iden_num(l: int):
+    letters = string.ascii_lowercase
+    return ''.join(choice(letters) for _ in range(l))
+
+
 if __name__ == '__main__':
     # Generate RSA keys
     izb_public_key, izb_private_key = rsa.newkeys(16)
     ik_public_key, ik_private_key = rsa.newkeys(16)
 
     m = gcd_and_simpl(ik_public_key.n)
-    I = "Hello, world!"
+    I = generate_iden_num(10)
 
     ascii_msg = ascii_encode(I).copy()
     mask_msg = mask(ascii_encode(I), m, ik_public_key.e, ik_public_key.n).copy()

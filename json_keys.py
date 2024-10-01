@@ -7,12 +7,6 @@ class JsonKeys:
     KEYEX_SERVER_PUB_N = "server_pubkey_n"
     KEYEX_SERVER_PUB_E = "server_pubkey_e"
 
-    BLIND_SIGN_KEY_EXCHANGE = "blind_sign_key_exchange"
-    BLIND_SIGN_KEYEX_CLIENT_PUB_N = "blind_sign_client_pubkey_n"
-    BLIND_SIGN_KEYEX_CLIENT_PUB_E = "blind_sign_client_pubkey_e"
-    BLIND_SIGN_KEYEX_SERVER_PUB_N = "blind_sign_server_pubkey_n"
-    BLIND_SIGN_KEYEX_SERVER_PUB_E = "blind_sign_server_pubkey_e"
-
     REGISTRATION = "registration"
     REG_STATE = "reg_state"
 
@@ -24,8 +18,9 @@ class JsonKeys:
 
     BLIND_SIGN = "blind_sign"
     BLIND_MASK_IDEN_NUM = "blind_mask_iden_num"
-    BLIND_SIGN_MASK_IDEN_NUM = "blind_sign_mask_iden_num"
     BLIND_SIGN_RESPONSE = "blind_sign_response"
+    BLIND_SIGN_CONFIRM_REQUEST = "blind_sign_confirm_request"
+    BLIND_SIGN_CONFIRM = "blind_sign_confirm"
 
     VOTER_ID = "id"
     IDEN_NUM_LEN = "iden_num_len"

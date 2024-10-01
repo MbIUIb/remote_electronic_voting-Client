@@ -121,8 +121,14 @@ class REVClient:
             self.signed_iden_num = demask(self.signed_masked_iden_num,
                                           self.masking_factor,
                                           self.server_pubkey_n)
-            return self.check_iden_num()  # проверка достоверности подписи
+
+            check = self.check_iden_num()  # проверка достоверности подписи
+            # подтверждение валидности подписи
+            self.send_json({jk.REQUEST: jk.BLIND_SIGN_CONFIRM_REQUEST,
+                            jk.BLIND_SIGN_CONFIRM: check})
+            return check
         else:
+            self.send_json({jk.BLIND_SIGN_CONFIRM: False})
             return self.signed_masked_iden_num  # failed
 
     def check_iden_num(self):

@@ -8,6 +8,7 @@ import rsa
 from dotenv import load_dotenv
 
 from json_keys import JsonKeys as jk
+from rev_crypt import generate_iden_num, mask, gcd_and_simpl, demask, unsign, sign_list
 
 # env
 load_dotenv()
@@ -17,12 +18,23 @@ class REVClient:
     def __init__(self, firstname: str, lastname: str, password: str):
         self.socket = socket.create_connection((os.getenv("HOST"), int(os.getenv("PORT"))), timeout=180)
 
+        # voter info
         self.firstname = firstname
         self.lastname = lastname
         self.password = password
-        self.id = None
-        self.iden_num_len = None
 
+        # crypt protocol info
+        self.n_id = None
+        self.masking_factor = None
+        self.iden_num_len = None
+        self.iden_num = None  # I
+        self.masked_iden_num = None  # I_m
+        self.cryptogramm_I_n_id = None  # E(I_m, n)
+        self.M_1 = None  # M_1
+        self.signed_masked_iden_num = None
+        self.signed_iden_num = None  # I_s
+
+        # crypt keys
         self.client_private_key = None
         self.client_public_key = None
         self.server_public_key = None
@@ -32,21 +44,20 @@ class REVClient:
         self.client_pubkey_e = None
         self.client_privkey_d = None
 
+        # crypt key generate
         self.generate_rsa_keys()
 
     def run(self):
         self.rsa_key_exchange()
+        # self.blind_sign_rsa_key_exchange()
 
-        print(self.registration_handler())
+        print("REG:", self.registration_handler())
+        print("AUTH:", self.authentication_handler())
 
-        print(self.authentication_handler())
-
-        self.get_crypt_params()
-
-        self.socket.close()
+        print("BLIND_SIGN:", self.blind_signature_handler())
 
     def generate_rsa_keys(self) -> None:
-        self.client_public_key, self.client_private_key = rsa.newkeys(512)
+        self.client_public_key, self.client_private_key = rsa.newkeys(int(os.getenv("RSA_KEY_LEN")))
 
         self.client_pubkey_n = self.client_public_key.n
         self.client_pubkey_e = self.client_public_key.e
@@ -80,13 +91,52 @@ class REVClient:
         auth_data = self.json_decrypt(self.recv_json())
         return ast.literal_eval(auth_data[jk.AUTH_STATE])
 
+    def blind_signature_handler(self):
+        # получение данных и генерация необходимых значений: iden_num, masking_factor
+        self.get_crypt_params()
+        self.iden_num = generate_iden_num(self.iden_num_len)
+        self.masking_factor = gcd_and_simpl(self.server_pubkey_n)
+
+        # маскирование iden_num => I_m
+        self.masked_iden_num = mask(self.iden_num,
+                                    self.masking_factor,
+                                    self.server_pubkey_e,
+                                    self.server_pubkey_n)
+
+        # генерация криптограммы с иденфикационным номером для слепой подписи => [E(I_m), E(n_id)]
+        self.cryptogramm_I_n_id = sign_list([self.masked_iden_num, self.n_id],
+                                            self.client_privkey_d,
+                                            self.client_pubkey_n)
+
+        # протокольное сообщение для слепой подписи => [E(I_m), E(n_id), n_id]
+        self.M_1 = self.cryptogramm_I_n_id + [self.n_id]
+        self.send_json({jk.REQUEST: jk.BLIND_SIGN,
+                        jk.BLIND_MASK_IDEN_NUM: self.M_1})
+
+        # подписанный iden_num => I_sm
+        self.signed_masked_iden_num = self.recv_json()[jk.BLIND_SIGN_RESPONSE]
+
+        if self.signed_masked_iden_num != jk.FAILED:
+            # демаскирование подписанного замаскированного iden_num
+            self.signed_iden_num = demask(self.signed_masked_iden_num,
+                                          self.masking_factor,
+                                          self.server_pubkey_n)
+            return self.check_iden_num()  # проверка достоверности подписи
+        else:
+            return self.signed_masked_iden_num  # failed
+
+    def check_iden_num(self):
+        return self.iden_num == unsign(self.signed_iden_num,
+                                       self.server_pubkey_e,
+                                       self.server_pubkey_n)
+
     def get_crypt_params(self) -> None:
         self.send_json({jk.REQUEST: jk.CRYPT_STAGE_1_INIT,
                         jk.FIRSTNAME: self.firstname,
                         jk.LASTNAME: self.lastname})
         crypt_stage_1_data = self.recv_json()
 
-        self.id = crypt_stage_1_data[jk.VOTER_ID]
+        self.n_id = crypt_stage_1_data[jk.VOTER_ID]
         self.iden_num_len = crypt_stage_1_data[jk.IDEN_NUM_LEN]
 
     def json_encrypt(self, json_data: dict[str: str]) -> dict[str: str]:

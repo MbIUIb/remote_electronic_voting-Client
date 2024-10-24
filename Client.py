@@ -8,7 +8,7 @@ import rsa
 from dotenv import load_dotenv
 
 from json_keys import JsonKeys as jk
-from rev_crypt import generate_iden_num, mask, gcd_and_simpl, demask, unsign, sign_list
+from rev_crypt import generate_iden_num, mask, gcd_and_simpl, demask, unsign, sign_list, sign, pack_I_n_id
 
 # env
 load_dotenv()
@@ -44,12 +44,22 @@ class REVClient:
         self.client_pubkey_e = None
         self.client_privkey_d = None
 
+        self.client_blind_pubkey_e = None
+        self.client_blind_pubkey_n = None
+        self.client_blind_privkey_d = None
+        self.client_blind_private_key = None
+        self.client_blind_public_key = None
+        self.server_blind_public_key = None
+        self.server_blind_pubkey_e = None
+        self.server_blind_pubkey_n = None
+
         # crypt key generate
         self.generate_rsa_keys()
+        self.generate_blind_rsa_keys()
 
     def run(self):
         self.rsa_key_exchange()
-        # self.blind_sign_rsa_key_exchange()
+        self.blind_rsa_key_exchange()
 
         print("REG:", self.registration_handler())
         print("AUTH:", self.authentication_handler())
@@ -63,6 +73,13 @@ class REVClient:
         self.client_pubkey_e = self.client_public_key.e
         self.client_privkey_d = self.client_private_key.d
 
+    def generate_blind_rsa_keys(self) -> None:
+        self.client_blind_public_key, self.client_blind_private_key = rsa.newkeys(int(os.getenv("RSA_BLIND_KEY_LEN")))
+
+        self.client_blind_pubkey_n = self.client_blind_public_key.n
+        self.client_blind_pubkey_e = self.client_blind_public_key.e
+        self.client_blind_privkey_d = self.client_blind_private_key.d
+
     def rsa_key_exchange(self) -> None:
         send_data = {jk.REQUEST: jk.KEY_EXCHANGE,
                      jk.KEYEX_CLIENT_PUB_N: str(self.client_pubkey_n),
@@ -74,6 +91,18 @@ class REVClient:
         self.server_pubkey_e = int(recv_data[jk.KEYEX_SERVER_PUB_E])
         self.server_public_key = rsa.PublicKey(self.server_pubkey_n,
                                                self.server_pubkey_e)
+
+    def blind_rsa_key_exchange(self) -> None:
+        send_data = {jk.REQUEST: jk.BLIND_KEY_EXCHANGE,
+                     jk.KEYEX_CLIENT_PUB_N: str(self.client_blind_pubkey_n),
+                     jk.KEYEX_CLIENT_PUB_E: str(self.client_blind_pubkey_e)}
+        self.send_json(send_data)
+
+        recv_data = self.recv_json()
+        self.server_blind_pubkey_n = int(recv_data[jk.KEYEX_SERVER_PUB_N])
+        self.server_blind_pubkey_e = int(recv_data[jk.KEYEX_SERVER_PUB_E])
+        self.server_blind_public_key = rsa.PublicKey(self.server_blind_pubkey_n,
+                                                     self.server_blind_pubkey_e)
 
     def registration_handler(self) -> bool:
         self.send_json(self.json_encrypt({jk.REQUEST: jk.REGISTRATION,
@@ -103,13 +132,13 @@ class REVClient:
                                     self.server_pubkey_e,
                                     self.server_pubkey_n)
 
-        # генерация криптограммы с иденфикационным номером для слепой подписи => [E(I_m), E(n_id)]
-        self.cryptogramm_I_n_id = sign_list([self.masked_iden_num, self.n_id],
-                                            self.client_privkey_d,
-                                            self.client_pubkey_n)
+        # генерация криптограммы с иденфикационным номером для слепой подписи => [E(I_m, n_id)]
+        self.cryptogramm_I_n_id = sign(pack_I_n_id(self.masked_iden_num, self.n_id),
+                                       self.client_blind_privkey_d,
+                                       self.client_blind_pubkey_n)
 
-        # протокольное сообщение для слепой подписи => [E(I_m), E(n_id), n_id]
-        self.M_1 = self.cryptogramm_I_n_id + [self.n_id]
+        # протокольное сообщение для слепой подписи => [E(I_m, n_id), n_id]
+        self.M_1 = [self.cryptogramm_I_n_id] + [self.n_id]
         self.send_json({jk.REQUEST: jk.BLIND_SIGN,
                         jk.BLIND_MASK_IDEN_NUM: self.M_1})
 
